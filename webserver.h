@@ -7,12 +7,15 @@
 #include<sys/socket.h>
 #include<sys/types.h>
 #include<sys/epoll.h>
+#include<assert.h>
+#include<string.h>
 using namespace std;
 #define ERRLOG(errmsg) do{\
     perror("errmsg");\
     exit(1);\
 }while(0)
 
+const int TIMESLOT = 5;  //最小超时单位
 class WebServer
 {
 public:
@@ -26,5 +29,9 @@ public:
     //epoll_event相关
     int m_listenfd;//监听套接字
     int m_OPT_LINGER;//是否下线
+
+    //定时器相关
+    //工具类
+   
 
 };
