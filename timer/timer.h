@@ -22,6 +22,10 @@ class util_timer
 public:
     //超时时间
     time_t expire;
+    //前向定时器
+    util_timer *prev;
+    //后向定时器
+    util_timer *next;
 
 };
 

@@ -9,6 +9,8 @@
 #include<sys/epoll.h>
 #include<assert.h>
 #include<string.h>
+#include<cassert>
+#include "./http/http_conn.h"
 using namespace std;
 #define ERRLOG(errmsg) do{\
     perror("errmsg");\
@@ -29,6 +31,7 @@ public:
     //epoll_event相关
     int m_listenfd;//监听套接字
     int m_OPT_LINGER;//是否下线
+    http_conn *user;//单个http连接
 
     //定时器相关
     //工具类
