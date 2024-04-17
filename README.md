@@ -5,6 +5,7 @@ Linux下基于C++的轻量级Web服务器
 ## 特点
 
 - 使用非阻塞socket
+- 使用epollLF/ET模式
 
 ## 实现
 
@@ -16,17 +17,23 @@ Linux下基于C++的轻量级Web服务器
 
   2. 设置套接字属性
 
-     SO_LINGER：服务器优雅下线
+     SO_LINGER：优雅下线
 
      SO_REUSEADDR：地址复用
+
+     O_NONBLOCK：手动控制多线程处理同一个socket事件
 
   2. 填充服务器网络信息结构体
 
      函数：inet_addr
 
   4. bind：将服务器用来通信的地址和端口信息绑定到socket上
-
+  
   5. epoll建立内核事件表，委托内核检测文件描述符对应的读写缓冲区的状态
+  
+     - LT/ET模式管理服务端和客户端socket
+     - EPOLLONESHOT
+     - EPOLLRDHUP
   
   5. 使用定时器管理非活跃socket，管理系统资源
   

@@ -10,7 +10,8 @@
 #include<assert.h>
 #include<string.h>
 #include<cassert>
-#include"Utils.h"
+#include "Utils.h"
+#include "config.h"
 #include "./http/http_conn.h"
 using namespace std;
 #define ERRLOG(errmsg) do{\
@@ -20,7 +21,7 @@ using namespace std;
 
 const int TIMESLOT = 5;  //最小超时单位
 const int MAX_FD = 65536; //最大文件描述符数目
-const int MAX_EVENT_NUMBER = 1000; //最大事件数
+const int MAX_EVENT_NUMBER = 1024; //最大事件数
 class WebServer
 {
 public:
@@ -28,12 +29,19 @@ public:
     ~WebServer();
     //创建网络编程：socket通信
     void eventListen();
+    //服务器运行，事件回环
+    void eventLoop();
 public:
     //基础信息
     int m_port;//端口
+    int m_epfd; //epollfd
+
     //epoll_event相关
     int m_listenfd;//监听套接字
     int m_OPT_LINGER;//是否优雅下线
+    int m_TRIGMode;//ET/LT
+    int m_LISTENTrigmode;//ET/LT
+    int m_CONNTrigmode;//ET/LT
     http_conn *user;//单个http连接
 
     //定时器相关
