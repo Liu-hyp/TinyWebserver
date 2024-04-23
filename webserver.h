@@ -12,6 +12,7 @@
 #include<cassert>
 #include "Utils.h"
 #include "config.h"
+#include "./thread/threadpool.h"
 #include "./http/http_conn.h"
 using namespace std;
 #define ERRLOG(errmsg) do{\
@@ -31,6 +32,8 @@ public:
     void eventListen();
     //服务器运行，事件回环
     void eventLoop();
+    //服务器监听到新客户端连接
+    void newConnection(int connfd, sockaddr* client_addr);
 public:
     //基础信息
     int m_port;//端口
@@ -45,9 +48,10 @@ public:
     http_conn *user;//单个http连接
 
     //定时器相关
-    util_timer *user_timer;
+    client_data *client_timer;
     //工具类
     Utils utils;
+    //线程池相关
    
 
 };

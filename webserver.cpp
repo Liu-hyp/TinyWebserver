@@ -16,11 +16,6 @@ void WebServer::eventListen()
 {
     //创建网络套接字
     //SOCK_STREAM 表示使用面向字节流的TCP协议
-    // if((m_listenfd = socket(PF_INET, SOCK_STREAM, 0)) < 0)
-    // {
-    //     ERRLOG("fail to socket");
-    // }
-
     //对于内部非法情况，使用assert断言
     m_listenfd = socket(PF_INET, SOCK_STREAM, 0);
     assert(m_listenfd >= 0);
@@ -59,16 +54,8 @@ void WebServer::eventListen()
 
     //epoll创建内核事件表
     //现在只有监听的文件描述符
-    //所有的文件描述符对应的读写缓冲区状态都是委托内核检测的epoll
-    //创建红黑书模型的实例
     m_epfd = epoll_create(5);
     assert(m_epfd >= 0);
-    //往epoll实例中添加节点
-    // struct epoll_event ev;
-    // ev.events = EPOLLIN; //检测listenfd读缓冲区是否有数据
-    // ev.data.fd = m_listenfd;
-    // ret = epoll_ctl(epfd, EPOLL_CTL_ADD, m_listenfd, &ev);
-    // assert(ret >= 0);
     utils.addfd_onepoll(m_epfd, m_listenfd, false, m_LISTENTrigmode);
 }
 
@@ -106,8 +93,17 @@ void WebServer::eventLoop()
                     }
                     socket_flag = utils.addfd_onepoll(m_epfd, client_fd, true, m_CONNTrigmode);
 
-
                 }
+                //是IO事件，处理客户连接上接收到的数据
+                //找到该连接对应的定时器
+                util_timer *timer = client_timer[epoll_events[i].data.fd].client_timer;
+                //reactor模式
+                //任务变化，调整定时器，往后延3个TIMESLOT
+                utils.adjust_timer(timer);
+                //分配一个线程处理读事件
+                
+
+
             }
         }
     }

@@ -16,6 +16,12 @@
 //连接资源结构体成员需要用到定时器
 //前向说明定时器类
 class util_timer;
+struct client_data
+{
+    sockaddr_in client_addr;
+    int client_fd;
+    util_timer *client_timer;
+};
 //定时器类：基于双向链表
 class util_timer
 {
@@ -26,6 +32,8 @@ public:
     util_timer *prev;
     //后向定时器
     util_timer *next;
+    //连接客户资源
+    client_data *user_data;
 
 };
 

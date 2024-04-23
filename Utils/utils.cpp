@@ -1,4 +1,4 @@
-#include"Utils.h"
+#include"utils.h"
 
 void Utils::init(int timeslot)
 {
@@ -47,4 +47,11 @@ void reset_oneshot(int epfd, int fd, int TRIGMODE)
         ev.events = EPOLLIN | EPOLLRDHUP;
     }
     epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
+}
+
+void Utils::adjust_timer(util_timer *timer)
+{
+    time_t cur = time(NULL);
+    timer->expire = cur + 3 * m_TIMESLOT;
+    m_timer_lst.adjust_timer(timer);
 }
