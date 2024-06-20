@@ -1,5 +1,0 @@
-
-class http_conn
-{
-
-};

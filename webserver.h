@@ -1,57 +1,90 @@
-#include<stdio.h>
-#include<unistd.h> 
-#include<stdlib.h>
-#include<errno.h>
-#include<arpa/inet.h>
-#include<netinet/in.h>
-#include<sys/socket.h>
-#include<sys/types.h>
-#include<sys/epoll.h>
-#include<assert.h>
-#include<string.h>
-#include<cassert>
-#include "Utils.h"
-#include "config.h"
-#include "./thread/threadpool.h"
-#include "./http/http_conn.h"
-using namespace std;
-#define ERRLOG(errmsg) do{\
-    perror("errmsg");\
-    exit(1);\
-}while(0)
+//
+// Created by Nidhogg on 2024/5/28.
+//
 
-const int TIMESLOT = 5;  //最小超时单位
-const int MAX_FD = 65536; //最大文件描述符数目
-const int MAX_EVENT_NUMBER = 1024; //最大事件数
-class WebServer
-{
+#ifndef TINYWEBSERVER_WEBSERVER_H
+#define TINYWEBSERVER_WEBSERVER_H
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <cassert>
+#include <string>
+#include <sys/epoll.h>
+
+#include "./threadpool/threadpool.h"
+#include "./http/http_connect.h"
+#include "./timer/timer.h"
+
+const int MAX_FD = 65536;           //最大文件描述符
+const int MAX_EVENT_NUMBER = 10000; //最大事件数
+const int TIMESLOT = 5;             //最小超时单位
+
+
+class webserver {   
 public:
-    WebServer();
-    ~WebServer();
-    //创建网络编程：socket通信
+    void init(int port , std::string user, std::string passWord, std::string databaseName,
+              int log_write , int opt_linger, int trigmode, int sql_num,
+              int thread_num, int close_log, int actor_model);
+
+    void thread_pool();
+    void sql_pool();
+    void log_write();
+    void trig_mode();
     void eventListen();
-    //服务器运行，事件回环
     void eventLoop();
-    //服务器监听到新客户端连接
-    void newConnection(int connfd, sockaddr* client_addr);
+    void timer(int connfd, struct sockaddr_in client_address);
+    //void adjust_timer(util_timer *timer);
+    //void deal_timer(util_timer *timer, int sockfd);
+    bool dealclientdata();
+    bool dealwithsignal(bool& timeout, bool& stop_server);
+    void dealwithread(int sockfd);
+    void dealwithwrite(int sockfd);
+
 public:
-    //基础信息
-    int m_port;//端口
-    int m_epfd; //epollfd
+    //基础
+    int m_port;
+    char *m_root;
+    int m_log_write;
+    int m_close_log;
+    int m_actormodel;
+    //网络信息
+    int m_pipefd[2];//相互连接的套接字
+    int m_epollfd;//epoll对象
+    http_conn *users; //单个http连接
+
+    //数据库相关
+    connection_pool *m_connPool;
+    std::string m_user;         //登陆数据库用户名
+    std::string m_passWord;     //登陆数据库密码
+    std::string m_databaseName; //使用数据库名
+    int m_sql_num;
+
+    //线程池相关
+    threadpool<http_conn> *m_pool;
+    int m_thread_num;
 
     //epoll_event相关
-    int m_listenfd;//监听套接字
-    int m_OPT_LINGER;//是否优雅下线
-    int m_TRIGMode;//ET/LT
-    int m_LISTENTrigmode;//ET/LT
-    int m_CONNTrigmode;//ET/LT
-    http_conn *user;//单个http连接
+    epoll_event events[MAX_EVENT_NUMBER];
+
+    int m_listenfd;
+    int m_OPT_LINGER;
+    int m_TRIGMode;
+    int m_LISTENTrigmode;
+    int m_CONNTrigmode;
 
     //定时器相关
-    client_data *client_timer;
-    //工具类
+    //client_data *users_timer;
     Utils utils;
-    //线程池相关
-   
 
+    webserver();
+    ~webserver();
 };
+
+
+#endif //TINYWEBSERVER_WEBSERVER_H
