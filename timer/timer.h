@@ -25,8 +25,9 @@
 #include <errno.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
-
+#include <queue>
 #include <time.h>
+#include <memory>
 #include "../log/log.h"
 
 class util_timer;
@@ -37,21 +38,55 @@ struct client_data
     int sockfd;
     util_timer *timer;
 };
-
 class util_timer
 {
 public:
     util_timer() : prev(NULL), next(NULL) {}
 
 public:
+    //超时时间
     time_t expire;
-
+    //回调函数：从内核事件表删除事件，关闭文件描述符，释放连接资源
     void (* cb_func)(client_data *);
+    //连接资源
     client_data *user_data;
+    //前后向定时器
     util_timer *prev;
     util_timer *next;
 };
-
+class TimeCmp
+{
+public:
+    bool operator()(util_timer* a, util_timer* b)
+    {
+        return a->expire > b->expire;
+    }
+};
+class sort_timer_heap
+{
+public:   
+    void push(util_timer* x){Q.push(x);}
+    void erase(util_timer* x){D.push(x);}
+    bool empty()
+    {
+        return Q.empty();
+    }
+    util_timer* top()
+    {
+        while(!D.empty() && (Q.top() == D.top()))
+        {
+            Q.pop();
+            D.pop();
+        }
+        return Q.empty() ? nullptr : Q.top();
+    }
+    int size() const
+    {
+        return Q.size() - D.size();
+    }
+private:
+    std::priority_queue<util_timer*, vector<util_timer*>, TimeCmp>Q,D;
+};
 class sort_timer_lst
 {
 public:
@@ -65,7 +100,8 @@ public:
 
 private:
     void add_timer(util_timer *timer, util_timer *lst_head);
-
+    //优先队列维护定时器,小顶堆
+    sort_timer_heap priority_timer_queue;
     util_timer *head;
     util_timer *tail;
 };
@@ -103,6 +139,5 @@ public:
 };
 
 void cb_func(client_data *user_data);
-
 
 #endif //TINYWEBSERVER_TIMER_H

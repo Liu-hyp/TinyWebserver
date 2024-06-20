@@ -26,8 +26,6 @@
 #include <sys/uio.h>
 #include <map>
 #include <mysql/mysql.h>
-
-#include "../lock/locker.h"
 #include "../Imysql/sql_connection_pool.h"
 #include "../timer/timer.h"
 #include "../log/log.h"
@@ -50,6 +48,7 @@ public:
         CONNECT,
         PATH
     };
+    //主状态机的状态
     enum class CHECK_STATE
     {
         CHECK_STATE_REQUESTLINE = 0,

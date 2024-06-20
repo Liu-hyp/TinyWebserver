@@ -13,7 +13,6 @@
 #include <string.h>
 #include <iostream>
 #include <string>
-#include "../lock/locker.h"
 #include "../log/log.h"
 
 using namespace std;
@@ -38,9 +37,7 @@ private:
     int m_MaxConn;  //最大连接数
     int m_CurConn;  //当前已使用的连接数
     int m_FreeConn; //当前空闲的连接数
-    locker lock;
     list<MYSQL *> connList; //连接池
-    sem reserve;
 
 public:
     string m_url;			 //主机地址

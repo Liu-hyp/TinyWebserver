@@ -4,7 +4,7 @@
 
 #include "timer.h"
 #include "../http/http_connect.h"
-
+extern const int TIMESLOT;
 sort_timer_lst::sort_timer_lst()
 {
     //TODO::初始化定时器
@@ -17,14 +17,21 @@ sort_timer_lst::~sort_timer_lst()
 void sort_timer_lst::add_timer(util_timer *timer)
 {
     //TODO::添加定时器,注意节点存在判断
+    this->priority_timer_queue.push(timer);
+    cout << "当前定时器有 " << this->priority_timer_queue.size() << endl; 
 }
 void sort_timer_lst::adjust_timer(util_timer *timer)
 {
-    //TODO::调整定时器
+    util_timer* newtimer = timer;
+    time_t cur = time(NULL);
+    newtimer->expire = cur + 3 * TIMESLOT;
+    this->del_timer(timer);
+    this->add_timer(newtimer);
 }
 void sort_timer_lst::del_timer(util_timer *timer)
 {
     //TODO::删除定时器
+    this->priority_timer_queue.erase(timer);
 }
 void sort_timer_lst::tick()
 {

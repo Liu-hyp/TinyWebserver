@@ -12,7 +12,6 @@
 #include <stdarg.h>
 #include <pthread.h>
 #include "block_queue.h"
-
 using namespace std;
 
 class Log
@@ -20,12 +19,16 @@ class Log
 public:
     static Log *get_instance()
     {
-        //TODO::懒汉模式
+        //TODO::懒汉模式:
+        //C++11后：使用局部变量懒汉不用加锁
+        static Log instance;
+        return &instance;
     }
 
     static void *flush_log_thread(void *args)
     {
         //TODO::异步写日志
+        Log::get_instance()->async_write_log();
     }
     //可选择的参数有日志文件、日志缓冲区大小、最大行数以及最长日志条队列
     bool init(const char *file_name, int close_log, int log_buf_size = 8192, int split_lines = 5000000, int max_queue_size = 0);
@@ -40,6 +43,13 @@ private:
     void *async_write_log()
     {
         //TODO::异步写日志
+        string single_log;
+        //从阻塞队列中取出一个日志string，写入文件
+        while (m_log_queue->pop(single_log, 1))
+        {
+            std::lock_guard<std::mutex>locker(m_mutex);
+            fputs(single_log.c_str(), m_fp);
+        }
     }
 
 private:
@@ -53,7 +63,7 @@ private:
     char *m_buf;
     block_queue<string> *m_log_queue; //阻塞队列
     bool m_is_async;                  //是否同步标志位
-    locker m_mutex;
+    std::mutex m_mutex;
     int m_close_log; //关闭日志
 };
 

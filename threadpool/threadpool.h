@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <exception>
 #include <pthread.h>
-#include "../lock/locker.h"
 #include "../Imysql/sql_connection_pool.h"
 
 template <typename T>

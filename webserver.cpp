@@ -17,6 +17,7 @@ webserver::webserver()
     m_port = 8080;
 
     //TODO::创建定时器
+    users_timer = new client_data[MAX_FD];
 }
 
 webserver::~webserver()
@@ -131,24 +132,40 @@ void webserver::timer(int connfd, struct sockaddr_in client_address)
 {
     // TODO: 初始化http_conn对象
     users[connfd].init(connfd, client_address, m_root, m_CONNTrigmode, m_close_log, m_user, m_passWord, m_databaseName);
-    cout << "当前访问connfd为：" << connfd << endl;
-    sockaddr_in* clientaddr = users[connfd].get_address();
-    cout << "IP:" << inet_ntoa((*clientaddr).sin_addr) << endl;
+    cout << "[client connfd：]" << connfd;   
+    cout << "   [IP]:" << inet_ntoa(client_address.sin_addr) << endl;
     // TODO: 初始化client_data数据
     // 创建定时器，设置回调函数和超时时间，绑定用户数据，将定时器添加到链表中
+    users_timer[connfd].address = client_address;
+    users_timer[connfd].sockfd = connfd;
+    util_timer *timer = new util_timer();
+    timer->user_data = &users_timer[connfd];
+    timer->cb_func = cb_func;
+    time_t cur = time(NULL);
+    timer->expire = cur + 3 * TIMESLOT;
+    users_timer[connfd].timer = timer;
+    utils.m_timer_lst.add_timer(timer);
 }
 
-// void webserver::adjust_timer(util_timer *timer)
-// {
-//     // TODO: 调整定时器
-//     //若有数据传输，则将定时器往后延迟3个单位
-//     //并对新的定时器在链表上的位置进行调整
-// }
+void webserver::adjust_timer(util_timer *timer)
+{
+    // TODO: 调整定时器  
+    //若有数据传输，则将定时器往后延迟3个单位
+    //并对新的定时器在链表上的位置进行调整 
+    utils.m_timer_lst.adjust_timer(timer); 
+    cout << "adjust timer once" << endl;
+}
 
-// void webserver::deal_timer(util_timer *timer, int sockfd)
-// {
-//     // TODO: 处理超时定时器
-// }
+void webserver::deal_timer(util_timer *timer, int sockfd)
+{
+    // TODO: 处理超时定时器
+    timer->cb_func(timer->user_data);
+    if(timer)
+    {
+        utils.m_timer_lst.del_timer(timer);
+    }
+    cout << "close fd:" << users_timer[sockfd].sockfd << endl;
+}
 
 bool webserver::dealclientdata()
 {
@@ -194,32 +211,78 @@ bool webserver::dealclientdata()
     }
     return true;
 }
-
+//处理定时器信号：set the timeout true
 bool webserver::dealwithsignal(bool& timeout, bool& stop_server)
 {
     //TODO::处理信号
+    int ret = 0;
+    int sig = -1;
+    char signals[1024];
+    //从管道读端读出信号值，成功返回字节数，失败返回-1
+    //正常情况下，这里的ret返回值总是1，只有14和15两个ASCII码对应的字符
+    ret = recv(m_pipefd[0], signals, sizeof(signals), 0);
+    if(ret == -1)
+    {
+        return false;
+    }
+    else if(ret == 0)
+    {
+        return false;
+    }
+    else
+    {
+        for (int i = 0; i < ret; ++i)
+        {       
+            //这里面明明是字符
+            switch (signals[i])
+            {
+            //这里是整型
+            case SIGALRM:
+            {
+                timeout = true;
+                break;
+            }
+            //关闭服务器
+            case SIGTERM:
+            {
+                stop_server = true;
+                break;
+            }
+            default:
+                break;
+            }
+        }
+    }
+    return true;
 }
 
-// bool webserver::dealwithread(int sockfd)
-// {
-//     //TODO::处理读事件
-//     //reactor
-//     if (1 == m_actormodel)
-//     {
-//         //若监测到读事件，将该事件放入请求队列
-//     }
-//     else
-//     {
-//         //proactor
-//         if (users[sockfd].read_once())
-//         {
-//             //若监测到读事件，将该事件放入请求队列
-//         }
-//         else
-//         {
-//         }
-//     }
-// }
+void webserver::dealwithread(int sockfd)
+{
+    //TODO::处理读事件
+    //创建定时器临时变量，将连接对应的定时器取出
+    util_timer* timer = users_timer[sockfd].timer;
+    //reactor
+    if (m_actormodel == 1)
+    {
+        if(timer)
+        {
+            this->adjust_timer(timer);
+        }
+        //若监测到读事件，将该事件放入请求队列
+        m_pool->append(&users[sockfd], 0);
+    }
+    else
+    {
+        //proactor
+        if (users[sockfd].read_once())
+        {
+            //若监测到读事件，将该事件放入请求队列
+        }
+        else
+        {
+        }
+    }
+}
 
 void webserver::dealwithwrite(int sockfd)
 {
@@ -265,7 +328,36 @@ void webserver::eventLoop()
             if(sockfd = m_listenfd)
             {
                 bool flag = this->dealclientdata();
+                if(flag == false)
+                    continue;
             }
+            //处理异常事件
+            else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+            {
+                //服务器端关闭连接，移除对应的定时器
+                util_timer *timer = users_timer[sockfd].timer;
+                this->deal_timer(timer, sockfd);
+            }
+            //处理定时器信号
+            else if ((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN))
+            {
+                //接收到SIGALRM信号，timeout设置为True
+                bool flag = dealwithsignal(timeout, stop_server);
+                if (false == flag)
+                    //LOG_ERROR("%s", "dealclientdata failure");
+                    cout << "dealclientdata failure" << endl;
+            }
+            //处理客户连接上接收到的数据
+            else if (events[i].events & EPOLLIN)
+            {
+                dealwithread(sockfd);
+            }
+            //处理客户连接上send的数据
+            else if (events[i].events & EPOLLOUT)
+            {
+                dealwithwrite(sockfd);
+            }
+
         }
     }
 }

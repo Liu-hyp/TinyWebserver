@@ -18,7 +18,6 @@ const char *error_404_form = "The requested file was not found on this server.\n
 const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the request file.\n";
 
-locker m_lock;
 map<string, string> users;
 //TODO::初始化连接池
 void http_conn::initmysql_result(connection_pool *connPool)
@@ -86,21 +85,48 @@ void http_conn::close_conn(bool real_close)
 void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int TRIGMode,
                      int close_log, string user, string passwd, string sqlname)
 {
-    m_sockfd = sockfd;
-    m_address = addr;
+    this->m_sockfd = sockfd;
+    this->m_address = addr;
     addfd(m_epollfd, sockfd, true, m_TRIGMode);
-    m_user_count++;
+    http_conn::m_user_count++;
     //当浏览器出现连接重置时，可能是网站根目录出错或http响应格式出错或者访问的文件中内容完全为空
-    // doc_root = root;
-    // m_TRIGMode = TRIGMode;
-    // m_close_log = close_log;
+    this->doc_root = root;
+    this->m_TRIGMode = TRIGMode;
+    this->m_close_log = close_log;
 
-    // strcpy(sql_user, user.c_str());
-    // strcpy(sql_passwd, passwd.c_str());
-    // strcpy(sql_name, sqlname.c_str());
+    strcpy(this->sql_user, user.c_str());
+    strcpy(this->sql_passwd, passwd.c_str());
+    strcpy(this->sql_name, sqlname.c_str());
+    this->init();
+    
 }
 
 //TODO::初始化新接受的连接
+//check_state默认为分析请求行状态
+void http_conn::init()
+{
+    this->mysql = NULL;
+    this->bytes_to_send = 0;
+    this->bytes_have_send = 0;
+    this->m_check_state = CHECK_STATE::CHECK_STATE_REQUESTLINE;
+    this->m_linger = false;
+    this->m_method = METHOD::GET;
+    this->m_url = 0;
+    this->m_version = 0;
+    this->m_content_length = 0;
+    this->m_host = 0;
+    this->m_start_line = 0;
+    this->m_checked_idx = 0;
+    this->m_read_idx = 0;
+    this->m_write_idx = 0;
+    this->cgi = 0;
+    this->m_state = 0;
+    this->timer_flag = 0;
+    this->improv = 0;
+    memset(this->m_read_buf, '\0', http_conn::READ_BUFFER_SIZE);
+    memset(this->m_write_buf, '\0', http_conn::WRITE_BUFFER_SIZE);
+    memset(this->m_real_file, '\0', http_conn::FILENAME_LEN);
+}
 //check_state默认为分析请求行状态
 //TODO::从状态机，用于分析出一行内容
 //返回值为行的读取状态，有LINE_OK,LINE_BAD,LINE_OPEN
