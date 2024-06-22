@@ -123,6 +123,8 @@ void Utils::timer_handler()
 void Utils::show_error(int connfd, const char *info)
 {
     //TODO::显示错误信息
+    send(connfd, info, strlen(info), 0);
+    close(connfd);
 }
 
 int *Utils::u_pipefd = 0;

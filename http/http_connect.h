@@ -1,7 +1,3 @@
-//
-// Created by Nidhogg on 2024/5/28.
-//
-
 #ifndef TINYWEBSERVER_HTTP_CONNECT_H
 #define TINYWEBSERVER_HTTP_CONNECT_H
 
@@ -55,6 +51,7 @@ public:
         CHECK_STATE_HEADER,
         CHECK_STATE_CONTENT
     };
+    static CHECK_STATE check_state;
     enum class HTTP_CODE
     {
         NO_REQUEST,
@@ -66,12 +63,14 @@ public:
         INTERNAL_ERROR,
         CLOSED_CONNECTION
     };
+    static HTTP_CODE http_code;
     enum class LINE_STATUS
     {
         LINE_OK = 0,
         LINE_BAD,
         LINE_OPEN
     };
+    static LINE_STATUS line_status;
 
 public:
     http_conn() {}
@@ -80,7 +79,7 @@ public:
 public:
     void init(int sockfd, const sockaddr_in &addr, char *, int, int, string user, string passwd, string sqlname);
     void close_conn(bool real_close = true);
-    void process();
+    static void process(http_conn& user);
     bool read_once();
     bool write();
     sockaddr_in *get_address()
@@ -122,6 +121,7 @@ private:
     int m_sockfd;
     sockaddr_in m_address;
     char m_read_buf[READ_BUFFER_SIZE];
+    //缓冲区中m_read_buf中数据的最后一个字节的下一个位置
     long m_read_idx;
     long m_checked_idx;
     int m_start_line;

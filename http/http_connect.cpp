@@ -5,6 +5,7 @@
 #include "http_connect.h"
 
 #include <mysql/mysql.h>
+#include <mutex>
 #include <fstream>
 
 //定义http响应的一些状态信息
@@ -18,6 +19,7 @@ const char *error_404_form = "The requested file was not found on this server.\n
 const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the request file.\n";
 
+std::mutex m_lock;
 map<string, string> users;
 //TODO::初始化连接池
 void http_conn::initmysql_result(connection_pool *connPool)
@@ -132,17 +134,81 @@ void http_conn::init()
 //返回值为行的读取状态，有LINE_OK,LINE_BAD,LINE_OPEN
 http_conn::LINE_STATUS http_conn::parse_line()
 {
-
+    char temp;
+    for (; m_checked_idx < m_read_idx; ++m_checked_idx)
+    {
+        temp = m_read_buf[m_checked_idx];
+        if (temp == '\r')
+        {
+            if ((m_checked_idx + 1) == m_read_idx)
+                return LINE_STATUS::LINE_OPEN;
+            else if (m_read_buf[m_checked_idx + 1] == '\n')
+            {
+                m_read_buf[m_checked_idx++] = '\0';
+                m_read_buf[m_checked_idx++] = '\0';
+                return LINE_STATUS::LINE_OK;
+            }
+            return LINE_STATUS::LINE_BAD;
+        }
+        else if (temp == '\n')
+        {
+            if (m_checked_idx > 1 && m_read_buf[m_checked_idx - 1] == '\r')
+            {
+                m_read_buf[m_checked_idx - 1] = '\0';
+                m_read_buf[m_checked_idx++] = '\0';
+                return LINE_STATUS::LINE_OK;
+            }
+            return LINE_STATUS::LINE_BAD;
+        }
+    }
+    return LINE_STATUS::LINE_OPEN;
 }
 
 //TODO::循环读取客户数据，直到无数据可读或对方关闭连接
 //非阻塞ET工作模式下，需要一次性将数据读完
 bool http_conn::read_once()
 {
-
+    if (m_read_idx >= READ_BUFFER_SIZE)
+    {
+        return false;
+    }
+    int bytes_read = 0;
+    /*读取数据*/
     //LT读取数据
+    if(m_TRIGMode == 0)
+    {
+        bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
+        m_read_idx += bytes_read;
 
+        if (bytes_read <= 0) //<0出错 =0连接关闭
+        {
+            return false;
+        }
+        return true;
+    }
     //ET读数据
+    else
+    {
+        while (true)
+        {
+            bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
+            if (bytes_read == -1)
+            {
+                //非阻塞ET模式下，需要一次性将数据读完，无错
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    break;
+                return false;
+            }
+            else if (bytes_read == 0)
+            {
+                return false;
+            }
+            m_read_idx += bytes_read;
+        }
+        return true;
+    }
+    return false;
+    
 }
 
 //TODO::解析http请求行，获得请求方法，目标url及http版本号
@@ -165,15 +231,194 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
 
 }
 
-//TODO::处理http请求
+//TODO::有限状态机处理请求报文
 http_conn::HTTP_CODE http_conn::process_read()
 {
+    LINE_STATUS line_status = LINE_STATUS::LINE_OK;
+    HTTP_CODE ret = HTTP_CODE::NO_REQUEST;
+    char *text = 0;
+
+    while ((m_check_state == CHECK_STATE::CHECK_STATE_CONTENT && line_status == LINE_STATUS::LINE_OK) || ((line_status = parse_line()) == LINE_STATUS::LINE_OK))
+    {
+        text = get_line();
+        m_start_line = m_checked_idx;
+        //LOG_INFO("%s", text);
+        switch (m_check_state)
+        {
+        case CHECK_STATE::CHECK_STATE_REQUESTLINE:
+        {
+            ret = parse_request_line(text);
+            if (ret == HTTP_CODE::BAD_REQUEST)
+                return HTTP_CODE::BAD_REQUEST;
+            break;
+        }
+        case CHECK_STATE::CHECK_STATE_HEADER:
+        {
+            ret = parse_headers(text);
+            if (ret == HTTP_CODE::BAD_REQUEST)
+                return HTTP_CODE::BAD_REQUEST;
+            else if (ret == HTTP_CODE::GET_REQUEST)
+            {
+                return do_request();
+            }
+            break;
+        }
+        case CHECK_STATE::CHECK_STATE_CONTENT:
+        {
+            ret = parse_content(text);
+            if (ret == HTTP_CODE::GET_REQUEST)
+                return do_request();
+            line_status = LINE_STATUS::LINE_OPEN;
+            break;
+        }
+        default:
+            return HTTP_CODE::INTERNAL_ERROR;
+        }
+    }
+    return HTTP_CODE::NO_REQUEST;
 
 }
 
 //TODO::生成响应
 http_conn::HTTP_CODE http_conn::do_request()
 {
+    strcpy(m_real_file, doc_root);
+    int len = strlen(doc_root);
+    //printf("m_url:%s\n", m_url);
+    const char *p = strrchr(m_url, '/');
+
+    //处理cgi
+    if (cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3'))
+    {
+
+        //根据标志判断是登录检测还是注册检测
+        char flag = m_url[1];
+
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/");
+        strcat(m_url_real, m_url + 2);
+        strncpy(m_real_file + len, m_url_real, FILENAME_LEN - len - 1);
+        free(m_url_real);
+
+        //将用户名和密码提取出来
+        //eg:user=123&passwd=123
+        char name[100], password[100];
+        int i;
+        for (i = 5; m_string[i] != '&'; ++i)
+            name[i - 5] = m_string[i];
+        name[i - 5] = '\0';
+
+        int j = 0;
+        for (i = i + 10; m_string[i] != '\0'; ++i, ++j)
+            password[j] = m_string[i];
+        password[j] = '\0';
+
+        if (*(p + 1) == '3')
+        {
+            //如果是注册，先检测数据库中是否有重名的
+            //没有重名的，进行增加数据
+            char *sql_insert = (char *)malloc(sizeof(char) * 200);
+            strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
+            strcat(sql_insert, "'");
+            strcat(sql_insert, name);
+            strcat(sql_insert, "', '");
+            strcat(sql_insert, password);
+            strcat(sql_insert, "')");
+
+            if (users.find(name) == users.end())
+            {
+                m_lock.lock();
+                int res = mysql_query(mysql, sql_insert);
+                users.insert(pair<string, string>(name, password));
+                m_lock.unlock();
+
+                if (!res)
+                    strcpy(m_url, "/log.html");
+                else
+                    strcpy(m_url, "/registerError.html");
+            }
+            else
+                strcpy(m_url, "/registerError.html");
+        }
+        //如果是登录，直接判断
+        //若浏览器端输入的用户名和密码在表中可以查找到，返回1，否则返回0
+        else if (*(p + 1) == '2')
+        {
+            if (users.find(name) != users.end() && users[name] == password)
+                strcpy(m_url, "/welcome.html");
+            else
+                strcpy(m_url, "/logError.html");
+        }
+    }
+    //如果请求资源为/0，表示跳转注册界面
+    if (*(p + 1) == '0')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/register.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    //如果请求资源为/1，表示跳转登录界面
+    else if (*(p + 1) == '1')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/log.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    //如果请求资源为/5，表示跳转pic
+    else if (*(p + 1) == '5')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/picture.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    //如果请求资源为/6，表示跳转video
+    else if (*(p + 1) == '6')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/video.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+    //如果请求资源为/7，表示跳转weixin
+    else if (*(p + 1) == '7')
+    {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/fans.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+        free(m_url_real);
+    }
+    else
+        //如果以上均不符合，即不是登录和注册，直接将url与网站目录拼接
+        //这里的情况是welcome界面，请求服务器上的一个图片
+        strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
+    //通过stat获取请求资源文件信息，成功则将信息更新到m_file_stat结构体
+    //失败返回NO_RESOURCE状态，表示资源不存在
+    if (stat(m_real_file, &m_file_stat) < 0)
+        return HTTP_CODE::NO_RESOURCE;
+
+    //判断文件的权限，是否可读，不可读则返回FORBIDDEN_REQUEST状态
+    if (!(m_file_stat.st_mode & S_IROTH))
+        return HTTP_CODE::FORBIDDEN_REQUEST;
+
+    //判断文件类型，如果是目录，则返回BAD_REQUEST，表示请求报文有误
+    if (S_ISDIR(m_file_stat.st_mode))
+        return HTTP_CODE::BAD_REQUEST;
+
+    //以只读方式获取文件描述符，通过mmap将该文件映射到内存中
+    int fd = open(m_real_file, O_RDONLY);
+    m_file_address = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    //避免文件描述符的浪费和占用
+    close(fd);
+
+    //表示请求文件存在，且可以访问
+    return HTTP_CODE::FILE_REQUEST;
 
     //处理cgi
 
@@ -246,7 +491,22 @@ bool http_conn::process_write(HTTP_CODE ret)
 
 }
 //TODO::由线程池中的工作线程调用，这是处理http请求的入口函数
-void http_conn::process()
+void http_conn::process(http_conn& user)
 {
-
+    //NO_REQUEST，表示请求不完整，需要继续接收请求数据
+    HTTP_CODE read_ret = user.process_read();
+    if (read_ret == http_conn::HTTP_CODE::NO_REQUEST)
+    {
+        //注册并监听读事件
+        modfd(user.m_epollfd, user.m_sockfd, EPOLLIN, user.m_TRIGMode);
+        return;
+    }
+    //调用process_write完成报文响应
+    bool write_ret = user.process_write(read_ret);
+    if (!write_ret)
+    {
+        user.close_conn();
+    }
+    //注册并监听写事件
+    modfd(user.m_epollfd, user.m_sockfd, EPOLLOUT, user.m_TRIGMode);
 }

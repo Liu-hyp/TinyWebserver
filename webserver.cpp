@@ -257,7 +257,7 @@ void webserver::dealwithread(int sockfd)
     //TODO::处理读事件
     //创建定时器临时变量，将连接对应的定时器取出
     util_timer* timer = users_timer[sockfd].timer;
-    //reactor
+    //reactor（待实现）
     if (m_actormodel == 1)
     {
         if(timer)
@@ -269,9 +269,18 @@ void webserver::dealwithread(int sockfd)
     else
     {
         //proactor
+        //做读缓存操作
         if (users[sockfd].read_once())
         {
-            //若监测到读事件，将该事件放入请求队列
+            //将该事件放入请求队列
+            //LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            //m_pool->append_p(users + sockfd);
+            //数据库连接池
+            m_pool->enqueue(http_conn::process, users+sockfd);
+            if (timer)
+            {
+                adjust_timer(timer);
+            }
         }
         else
         {
