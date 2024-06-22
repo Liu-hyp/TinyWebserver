@@ -2,13 +2,24 @@
 #include "config.h"
 
 int main(int argc, char *argv[]) {
+    threadpool pool(4, nullptr, 4, 50);
+    for(int i = 0; i < 10; i++)
+    {
+        pool.enqueue([i]{
+            std::cout << "task: " << i << "is running" << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::cout << "task: " << i << "is done" << std::endl;
+        });
+    }
     //需要修改的数据库信息,登录名,密码,库名
+    /*
     std::string user = "root";
     std::string passwd = "root";
     std::string databasename = "qgydb";
     webserver server;
     server.eventListen();
     server.eventLoop();
+    */
     // //命令行解析
     // config config;
     // config.parse_arg(argc, argv);

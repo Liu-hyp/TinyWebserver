@@ -66,7 +66,7 @@ public:
     int m_sql_num;
 
     //线程池相关
-    threadpool<http_conn> *m_pool;
+    //threadpool<http_conn> *m_pool;
     int m_thread_num;
 
     //epoll_event相关

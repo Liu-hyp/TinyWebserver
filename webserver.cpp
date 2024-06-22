@@ -1,7 +1,3 @@
-//
-// Created by Nidhogg on 2024/5/28.
-//
-
 #include "webserver.h"
 webserver::webserver()
 {
@@ -267,9 +263,8 @@ void webserver::dealwithread(int sockfd)
         if(timer)
         {
             this->adjust_timer(timer);
-        }
-        //若监测到读事件，将该事件放入请求队列
-        m_pool->append(&users[sockfd], 0);
+            //待实现
+        }       
     }
     else
     {

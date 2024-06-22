@@ -4,7 +4,8 @@
 
 #include "timer.h"
 #include "../http/http_connect.h"
-extern const int TIMESLOT;
+//extern const int TIMESLOT;
+const int TIMESLOT = 5;             //最小超时单位
 sort_timer_lst::sort_timer_lst()
 {
     //TODO::初始化定时器
