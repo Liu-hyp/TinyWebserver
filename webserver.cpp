@@ -10,7 +10,6 @@ webserver::webserver()
     m_root = (char *)malloc(strlen(server_path) + strlen(root) + 1);
     strcpy(m_root, server_path);
     strcat(m_root, root);
-    m_port = 8080;
 
     //TODO::创建定时器
     users_timer = new client_data[MAX_FD];
@@ -19,13 +18,31 @@ webserver::webserver()
 webserver::~webserver()
 {
     //TODO::释放服务器
+    close(m_epollfd);
+    close(m_listenfd);
+    close(m_pipefd[1]);
+    close(m_pipefd[0]);
+    delete[] users;
+    delete[] users_timer;
+    delete m_pool;
 }
 
-void init(int port , std::string user, std::string passWord, std::string databaseName,
+void webserver::init(int port , std::string user, std::string passWord, std::string databaseName,
           int log_write , int opt_linger, int trigmode, int sql_num,
           int thread_num, int close_log, int actor_model)
 {
     //TODO::初始化服务器
+    m_port = port;
+    m_user = user;
+    m_passWord = passWord;
+    m_databaseName = databaseName;
+    m_sql_num = sql_num;
+    m_thread_num = thread_num;
+    m_log_write = log_write;
+    m_OPT_LINGER = opt_linger;
+    m_TRIGMode = trigmode;
+    m_close_log = close_log;
+    m_actormodel = actor_model;
 }
 
 //如果m_TRIGMode的值为0，那么m_LISTENTrigmode和m_CONNTrigmode都被设置为0，表示LT + LT模式。
@@ -35,36 +52,56 @@ void init(int port , std::string user, std::string passWord, std::string databas
 void webserver::trig_mode()
 {
     //TODO::设置触发模式
-    //LT + LT
-
+    if (0 == m_TRIGMode)
+    {
+        m_LISTENTrigmode = 0;
+        m_CONNTrigmode = 0;
+    }
     //LT + ET
-
+    else if (1 == m_TRIGMode)
+    {
+        m_LISTENTrigmode = 0;
+        m_CONNTrigmode = 1;
+    }
     //ET + LT
-
+    else if (2 == m_TRIGMode)
+    {
+        m_LISTENTrigmode = 1;
+        m_CONNTrigmode = 0;
+    }
     //ET + ET
-
+    else if (3 == m_TRIGMode)
+    {
+        m_LISTENTrigmode = 1;
+        m_CONNTrigmode = 1;
+    }   
 }
 
-// void webserver::log_write()
-// {
-//     if (0 == m_close_log)
-//     {
-//         //初始化日志
-//         if (1 == m_log_write)
-//             log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 800);
-//         else
-//             log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 0);
-//     }
-// }
+void webserver::log_write()
+{
+    if (0 == m_close_log)
+    {
+        //初始化日志
+        if (1 == m_log_write)
+            Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 800);
+        else
+            Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 0);
+    }
+}
 
 void webserver::sql_pool()
 {
-    //TODO::创建数据库连接池与初始化读取表
+    m_connPool = connection_pool::GetInstance();
+    m_connPool->init("localhost", m_user, m_passWord, m_databaseName, 3306, m_sql_num, m_close_log);
+
+    //初始化数据库读取表
+    users->initmysql_result(m_connPool);
 }
 
 void webserver::thread_pool()
 {
-    //TODO::创建线程池
+    //线程池
+    m_pool = new threadpool(m_actormodel, m_connPool, m_thread_num, 10000);
 }
 
 void webserver::eventListen()
@@ -128,7 +165,7 @@ void webserver::timer(int connfd, struct sockaddr_in client_address)
 {
     // TODO: 初始化http_conn对象
     users[connfd].init(connfd, client_address, m_root, m_CONNTrigmode, m_close_log, m_user, m_passWord, m_databaseName);
-    cout << "[client connfd：]" << connfd;   
+    cout << "[client connfd]:" << connfd;   
     cout << "   [IP]:" << inet_ntoa(client_address.sin_addr) << endl;
     // TODO: 初始化client_data数据
     // 创建定时器，设置回调函数和超时时间，绑定用户数据，将定时器添加到链表中
@@ -149,9 +186,9 @@ void webserver::adjust_timer(util_timer *timer)
     //若有数据传输，则将定时器往后延迟3个单位
     //并对新的定时器在链表上的位置进行调整 
     utils.m_timer_lst.adjust_timer(timer); 
-    cout << "adjust timer once" << endl;
+    cout << "adjust timer on sockfd: " << timer->user_data->sockfd << endl;;
 }
-
+//删除定时器节点，关闭连接
 void webserver::deal_timer(util_timer *timer, int sockfd)
 {
     // TODO: 处理超时定时器
@@ -160,7 +197,7 @@ void webserver::deal_timer(util_timer *timer, int sockfd)
     {
         utils.m_timer_lst.del_timer(timer);
     }
-    cout << "close fd:" << users_timer[sockfd].sockfd << endl;
+    cout << "close fd: " << users_timer[sockfd].sockfd << endl;
 }
 
 bool webserver::dealclientdata()
@@ -173,13 +210,13 @@ bool webserver::dealclientdata()
         int connfd = accept(m_listenfd, (struct sockaddr *)&client_address, &client_addrlength);
         if(connfd < 0)
         {
-            //LOG_ERROR("%s:errno is : %d", "accept error", errno);
+            LOG_ERROR("%s:errno is : %d", "accept error", errno);
             return false;
         }
         if(http_conn::m_user_count >= MAX_FD)
         {
             utils.show_error(connfd, "Server busy");
-            //LOG_ERROR("%s", "Server busy");
+            LOG_ERROR("%s", "Server busy");
             return false;
         }
         timer(connfd, client_address);        
@@ -192,13 +229,13 @@ bool webserver::dealclientdata()
             int connfd = accept(m_listenfd, (struct sockaddr*)&client_address, &client_addrlength);
             if(connfd < 0)
             {
-                //LOG_ERROR("%s:errno is:%d", "accept error", errno);
+                LOG_ERROR("%s:errno is:%d", "accept error", errno);
                 break;
             }
             if (http_conn::m_user_count >= MAX_FD)
             {
                 utils.show_error(connfd, "Server busy");
-                //LOG_ERROR("%s", "Server busy");
+                LOG_ERROR("%s", "Server busy");
                 break;
             }
             timer(connfd, client_address);
@@ -257,14 +294,11 @@ void webserver::dealwithread(int sockfd)
     //TODO::处理读事件
     //创建定时器临时变量，将连接对应的定时器取出
     util_timer* timer = users_timer[sockfd].timer;
+    std::cout << "sockfd: " << sockfd << " is reading..." <<std::endl;
     //reactor（待实现）
     if (m_actormodel == 1)
     {
-        if(timer)
-        {
-            this->adjust_timer(timer);
-            //待实现
-        }       
+        cout << "reactor mode to be continue..." << endl;   
     }
     else
     {
@@ -273,10 +307,10 @@ void webserver::dealwithread(int sockfd)
         if (users[sockfd].read_once())
         {
             //将该事件放入请求队列
-            //LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
             //m_pool->append_p(users + sockfd);
             //数据库连接池
-            m_pool->enqueue(http_conn::process, users+sockfd);
+            m_pool->enqueue(http_conn::process, users+sockfd, this->m_connPool);
             if (timer)
             {
                 adjust_timer(timer);
@@ -284,14 +318,41 @@ void webserver::dealwithread(int sockfd)
         }
         else
         {
+            deal_timer(timer, sockfd);
         }
     }
 }
 
 void webserver::dealwithwrite(int sockfd)
 {
+    util_timer *timer = users_timer[sockfd].timer;
+    std::cout << "sockfd: " << sockfd << " is writing..." << std::endl;
     //TODO::处理写事件
-    //类似上面的处理读事件结构
+    //reactor待实现
+    if (m_actormodel == 1)
+    {
+        cout << "reactor mode to be continue..." << endl;   
+    }
+    else
+    {
+        //proactor
+        //做读缓存操作
+        if (users[sockfd].write())
+        {
+            //将该事件放入请求队列
+            //LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+            //m_pool->append_p(users + sockfd);
+            //数据库连接池           
+            if (timer)
+            {
+                adjust_timer(timer);
+            }
+        }
+        else
+        {
+            deal_timer(timer, sockfd);
+        }
+    }
 }
 
 
@@ -321,7 +382,7 @@ void webserver::eventLoop()
         //忽略这种错误，让epoll报错误号为4时，再次做一次epoll_wait
         if(number < 0 && errno != EINTR)
         {
-            //LOG_ERROR("%s", "epoll failure");
+            LOG_ERROR("%s", "epoll failure");
             break;
         }
         //对所有就绪的事件进行处理
@@ -329,15 +390,19 @@ void webserver::eventLoop()
         {
             int sockfd = events[i].data.fd;
             //处理新到的客户机连接
-            if(sockfd = m_listenfd)
-            {
+            if(sockfd == m_listenfd)
+            {               
                 bool flag = this->dealclientdata();
                 if(flag == false)
+                {
+                    std::cout << "没有处理客户数据" << endl;
                     continue;
+                }                    
             }
             //处理异常事件
             else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
             {
+                std::cout << "处理异常" << std::endl;
                 //服务器端关闭连接，移除对应的定时器
                 util_timer *timer = users_timer[sockfd].timer;
                 this->deal_timer(timer, sockfd);
@@ -345,23 +410,32 @@ void webserver::eventLoop()
             //处理定时器信号
             else if ((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN))
             {
+                std::cout << "处理signal" << std::endl;
                 //接收到SIGALRM信号，timeout设置为True
                 bool flag = dealwithsignal(timeout, stop_server);
                 if (false == flag)
-                    //LOG_ERROR("%s", "dealclientdata failure");
-                    cout << "dealclientdata failure" << endl;
+                    LOG_ERROR("%s", "dealclientdata failure");
             }
             //处理客户连接上接收到的数据
             else if (events[i].events & EPOLLIN)
             {
+                std::cout << "处理sockfd: " << sockfd << "recv到的数据" << std::endl;
                 dealwithread(sockfd);
             }
             //处理客户连接上send的数据
             else if (events[i].events & EPOLLOUT)
             {
+                std::cout << "处理sockfd: " << sockfd << "send的数据" << std::endl;
                 dealwithwrite(sockfd);
             }
-
+        }
+        //处理定时器为非必须事件，收到信号并不是立马处理
+        //完成读写事件后，再进行处理
+        if (timeout)
+        {
+            utils.timer_handler();
+            LOG_INFO("%s", "timer tick");
+            timeout = false;
         }
     }
 }

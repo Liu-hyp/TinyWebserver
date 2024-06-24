@@ -37,13 +37,18 @@ void sort_timer_lst::del_timer(util_timer *timer)
 void sort_timer_lst::tick()
 {
     //TODO::处理定时任务
+    if(priority_timer_queue.empty())return;
+    //获取当前时间
+    time_t cur = time(NULL);
+    util_timer *tmp = priority_timer_queue.top();
+    while(tmp)
+    {
+        if(cur < tmp->expire)break;
+        tmp->cb_func(tmp->user_data);
+        priority_timer_queue.erase(tmp);
+        tmp = priority_timer_queue.top();
+    }
 }
-
-void sort_timer_lst::add_timer(util_timer *timer, util_timer *lst_head)
-{
-    //TODO::添加定时器
-}
-
 void Utils::init(int timeslot)
 {
     m_TIMESLOT = timeslot;
@@ -92,7 +97,6 @@ void Utils::sig_handler(int sig)
     int msg = sig;
     send(u_pipefd[1], (char*)&msg, 1, 0);
     errno = save_errno;
-    //TODO::处理信号
 }
 
 void Utils::addsig(int sig, void(handler)(int), bool restart)
@@ -118,6 +122,9 @@ void Utils::addsig(int sig, void(handler)(int), bool restart)
 void Utils::timer_handler()
 {
     //TODO::处理定时任务,重新定时以不断触发SIGALRM信号
+    m_timer_lst.tick();
+    //最小的时间单位为5s
+    alarm(m_TIMESLOT);
 }
 
 void Utils::show_error(int connfd, const char *info)
@@ -131,9 +138,11 @@ int *Utils::u_pipefd = 0;
 int Utils::u_epollfd = 0;
 
 class Utils;
+//定时器回调函数:从内核事件表删除事件，关闭文件描述符，释放连接资源
 void cb_func(client_data *user_data)
 {
     //回调函数
+    //删除非活动连接在socket上的注册事件
     epoll_ctl(Utils::u_epollfd, EPOLL_CTL_DEL, user_data->sockfd, 0);
     assert(user_data);
     close(user_data->sockfd);

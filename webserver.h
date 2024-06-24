@@ -1,7 +1,3 @@
-//
-// Created by Nidhogg on 2024/5/28.
-//
-
 #ifndef TINYWEBSERVER_WEBSERVER_H
 #define TINYWEBSERVER_WEBSERVER_H
 
@@ -28,6 +24,8 @@ const int TIMESLOT = 5;             //最小超时单位
 
 class webserver {   
 public:
+    webserver();
+    ~webserver();
     void init(int port , std::string user, std::string passWord, std::string databaseName,
               int log_write , int opt_linger, int trigmode, int sql_num,
               int thread_num, int close_log, int actor_model);
@@ -83,9 +81,9 @@ public:
     client_data *users_timer;
     Utils utils;
 
-    webserver();
-    ~webserver();
+    
 };
+
 
 
 #endif //TINYWEBSERVER_WEBSERVER_H

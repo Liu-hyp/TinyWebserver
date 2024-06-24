@@ -11,14 +11,14 @@
 #include <pthread.h>
 #include <vector>
 #include <functional>
-#include "../Imysql/sql_connection_pool.h"
+#include "../sql_connection_pool.h"
 #include "../log/block_queue.h"
 class threadpool
 {
 public:
     /*thread_number是线程池中线程的数量，max_requests是请求队列中最多允许的、等待处理的请求的数量*/
     //threadpool(int actor_model, connection_pool *connPool, int thread_number = 8, int max_request = 10000);
-    threadpool(int actor_model, connection_pool *connPool, int thread_number, int max_requests) : m_actor_model(actor_model),m_thread_number(thread_number), m_max_requests(max_requests), m_threads(NULL),m_connPool(connPool),stop(false)
+    threadpool(int actor_model, connection_pool *connPool, int thread_number, int max_requests) : m_actor_model(actor_model),m_thread_number(thread_number), m_max_requests(max_requests), m_threads(NULL),stop(false)
     {
         //TODO: 确定线程数和请求队列的大小
         if(thread_number <= 0 || max_requests <= 0)
@@ -35,7 +35,7 @@ public:
                     if(stop && tasks.empty())return;
                     std::function<void()>task(std::move(tasks.front()));
                     tasks.pop();
-                    locker.unlock();
+                    locker.unlock();                                   
                     task();               
                 }
             });
@@ -56,15 +56,16 @@ public:
     }
     //bool append(T *request, int state);
     //bool append_p(T *request);
-    template<class F, class... Args>
-    bool enqueue(F&& f, Args&&...args)
+    template<class F, class Args1, class Args2>
+    bool enqueue(F&& f, Args1* args, Args2* args2)
     {
-        std::function<void()>task = 
-            std::bind(std::forward<F>(f), std::forward<Args>(args)...); //bind把函数和函数参数绑定在一起，forward实现完美转发，左值就转换成左值引用，右值就转换成右值引用       
+        std::cout << "入队" << std::endl;
+        //std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args*>(args)); //bind把函数和函数参数绑定在一起，forward实现完美转发，左值就转换成左值引用，右值就转换成右值引用       
+        std::function<void()> task = [f,args, args2](){f(args, args2);};
         {
             std::unique_lock<std::mutex>locker(m_queuelocker);
             if(tasks.size() >= m_max_requests)return false;
-            tasks.emplace(std::move(task));       
+            tasks.emplace(std::move(task));     
         }
         condition.notify_one();
         return true;
@@ -83,7 +84,7 @@ private:
     std::queue<std::function<void()>>tasks; //任务队列
     std::mutex m_queuelocker;       //保护请求队列的互斥锁
     std::condition_variable condition;
-    connection_pool *m_connPool;  //数据库
+    static connection_pool *m_connPool;  //数据库
     int m_actor_model;          //模型切换
     bool stop;
 };

@@ -1,13 +1,9 @@
-//
-// Created by Nidhogg on 2024/5/28.
-//
-
 #include "config.h"
 
 config::config()
 {
     //端口号,默认9006
-    PORT = 9006;
+    PORT = 8080;
 
     //日志写入方式，默认同步
     LOGWrite = 0;

@@ -102,8 +102,8 @@ private:
     void add_timer(util_timer *timer, util_timer *lst_head);
     //优先队列维护定时器,小顶堆
     sort_timer_heap priority_timer_queue;
-    util_timer *head;
-    util_timer *tail;
+    //util_timer *head;
+    //util_timer *tail;
 };
 
 class Utils

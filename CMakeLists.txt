@@ -4,11 +4,14 @@ file(GLOB SOURCES
         *.h
         *.cpp
         )
-set(CMAKE_CXX_STANDARD 11)
-#如果编译不成功的话可能需要链接库，到时候再来问我
+set(CMAKE_CXX_STANDARD 17)
+find_path(MYSQL_ROOT_DIR mysql)
 add_subdirectory(timer)
-add_subdirectory(Imysql)
+#add_subdirectory(Imysql)
 add_subdirectory(http)
 add_subdirectory(log)
+include_directories(/user/include/mysql)
 add_executable(TinyWebserver ${SOURCES})
-target_link_libraries(TinyWebserver timer Imysql http log)
+#target_link_libraries(TinyWebserver Imysql)
+target_link_libraries(TinyWebserver timer http log mysqlclient)
+target_link_libraries(TinyWebserver /usr/lib/x86_64-linux-gnu/libjsoncpp.so)

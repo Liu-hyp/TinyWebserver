@@ -1,7 +1,3 @@
-//
-// Created by Nidhogg on 2024/5/28.
-//
-
 #ifndef TINYWEBSERVER_CONFIG_H
 #define TINYWEBSERVER_CONFIG_H
 #include "webserver.h"
